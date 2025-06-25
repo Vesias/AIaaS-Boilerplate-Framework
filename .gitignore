@@ -1,0 +1,63 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+.pnpm-store/
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+dist/
+
+# misc
+.DS_Store
+*.pem
+Thumbs.db
+*.local
+*.sublime-workspace
+*.sublime-project
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# VSCode settings
+.vscode/
+
+# IDEs
+.idea/
+*.iml
+
+# Logs
+*.log
+
+# Ignore lock files (optional, if you want to commit lock files, remove these)
+# package-lock.json
+yarn.lock
+pnpm-lock.yaml
