@@ -15,6 +15,8 @@
     "docker:prod": "docker-compose up -d"
   },
   "dependencies": {
+    "@ag-ui/client": "^0.0.28",
+    "@ag-ui/core": "^0.0.28",
     "@anthropic-ai/sdk": "^0.55.0",
     "@clerk/nextjs": "^6.23.0",
     "@copilotkit/backend": "^0.37.0",
@@ -80,6 +82,7 @@
     "react-resizable-panels": "^3.0.3",
     "recharts": "^3.0.0",
     "resend": "^4.6.0",
+    "rxjs": "^7.8.2",
     "sonner": "^2.0.5",
     "stripe": "^18.2.1",
     "svix": "^1.67.0",
