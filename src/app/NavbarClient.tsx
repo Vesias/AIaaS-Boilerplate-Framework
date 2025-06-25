@@ -3,7 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Github } from "lucide-react";
-import { UserButton, SignInButton, SignUpButton, useUser } from '@clerk/nextjs';
+import { UserButton, SignInButton, SignUpButton, useUser } from "@clerk/nextjs";
 
 export default function Navbar() {
   const { isSignedIn } = useUser();
@@ -37,16 +37,17 @@ export default function Navbar() {
           <Link href="/dashboard">
             <Button variant="ghost" size="sm">Dashboard</Button>
           </Link>
-          {!isSignedIn ? (
-            <div className="flex items-center gap-2">
+          {!isSignedIn && (
+            <>
               <SignInButton mode="modal">
-                <Button variant="outline" size="sm">Sign In</Button>
+                <Button size="sm" variant="outline">Sign In</Button>
               </SignInButton>
               <SignUpButton mode="modal">
-                <Button size="sm">Register</Button>
+                <Button size="sm">Sign Up</Button>
               </SignUpButton>
-            </div>
-          ) : (
+            </>
+          )}
+          {isSignedIn && (
             <UserButton afterSignOutUrl="/" />
           )}
         </div>

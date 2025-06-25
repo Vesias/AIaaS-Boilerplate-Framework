@@ -1,4 +1,4 @@
-import { EventTypes } from '@ag-ui/client'
+import { EventType } from '@ag-ui/client'
 
 // Mock AgentServer class since the actual @ag-ui/server package might not be available
 interface AgentServerOptions {
@@ -35,13 +35,13 @@ export class CustomAgentBackend {
 
   private setupDefaultHandlers() {
     // Handle user messages
-    this.on(EventTypes.USER_MESSAGE, async (event) => {
+    this.on(EventType.USER_MESSAGE, async (event) => {
       const { message, sessionId } = event.payload
       console.log(`[Agent Backend] User message: ${message}`)
 
       // Emit processing start
       this.emit({
-        type: EventTypes.PROCESSING_START,
+        type: EventType.PROCESSING_START,
         payload: { sessionId },
         sessionId,
       })
@@ -54,7 +54,7 @@ export class CustomAgentBackend {
 
       // Send agent response
       this.emit({
-        type: EventTypes.AGENT_MESSAGE,
+        type: EventType.AGENT_MESSAGE,
         payload: {
           message: response,
           sessionId,
@@ -64,20 +64,20 @@ export class CustomAgentBackend {
 
       // Emit processing end
       this.emit({
-        type: EventTypes.PROCESSING_END,
+        type: EventType.PROCESSING_END,
         payload: { sessionId },
         sessionId,
       })
     })
 
     // Handle tool requests
-    this.on(EventTypes.TOOL_REQUEST, async (event) => {
+    this.on(EventType.TOOL_REQUEST, async (event) => {
       const { tool, params, sessionId } = event.payload
       console.log(`[Agent Backend] Tool request: ${tool}`, params)
 
       // Emit tool call start
       this.emit({
-        type: EventTypes.TOOL_CALL,
+        type: EventType.TOOL_CALL,
         payload: {
           tool,
           params,
@@ -93,7 +93,7 @@ export class CustomAgentBackend {
 
         // Emit successful tool result
         this.emit({
-          type: EventTypes.TOOL_RESULT,
+          type: EventType.TOOL_RESULT,
           payload: {
             tool,
             result,
@@ -105,7 +105,7 @@ export class CustomAgentBackend {
       } catch (error: any) {
         // Emit tool error
         this.emit({
-          type: EventTypes.TOOL_RESULT,
+          type: EventType.TOOL_RESULT,
           payload: {
             tool,
             error: error.message,
@@ -118,7 +118,7 @@ export class CustomAgentBackend {
     })
 
     // Handle completion requests
-    this.on(EventTypes.COMPLETION_REQUEST, async (event) => {
+    this.on(EventType.COMPLETION_REQUEST, async (event) => {
       const { prompt, options, sessionId } = event.payload
       console.log(`[Agent Backend] Completion request: ${prompt.substring(0, 100)}...`)
 
@@ -128,7 +128,7 @@ export class CustomAgentBackend {
 
         // Emit completion response
         this.emit({
-          type: EventTypes.COMPLETION_RESPONSE,
+          type: EventType.COMPLETION_RESPONSE,
           payload: {
             completion,
             model: 'custom-agent-model',
@@ -138,7 +138,7 @@ export class CustomAgentBackend {
         })
       } catch (error: any) {
         this.emit({
-          type: EventTypes.ERROR,
+          type: EventType.ERROR,
           payload: {
             error: error.message,
             context: 'completion_request',
@@ -150,7 +150,7 @@ export class CustomAgentBackend {
     })
 
     // Handle session management
-    this.on(EventTypes.SESSION_START, async (event) => {
+    this.on(EventType.SESSION_START, async (event) => {
       const { sessionId } = event.payload
       console.log(`[Agent Backend] Starting session: ${sessionId}`)
 
@@ -159,7 +159,7 @@ export class CustomAgentBackend {
 
       // Send welcome message
       this.emit({
-        type: EventTypes.AGENT_MESSAGE,
+        type: EventType.AGENT_MESSAGE,
         payload: {
           message: `Hello! I'm ${this.name} v${this.version}. How can I help you today?`,
           sessionId,
@@ -168,7 +168,7 @@ export class CustomAgentBackend {
       })
     })
 
-    this.on(EventTypes.SESSION_END, async (event) => {
+    this.on(EventType.SESSION_END, async (event) => {
       const { sessionId } = event.payload
       console.log(`[Agent Backend] Ending session: ${sessionId}`)
 
@@ -180,9 +180,9 @@ export class CustomAgentBackend {
     })
 
     // Handle health checks
-    this.on(EventTypes.HEALTH_CHECK, async (event) => {
+    this.on(EventType.HEALTH_CHECK, async (event) => {
       this.emit({
-        type: EventTypes.HEARTBEAT,
+        type: EventType.HEARTBEAT,
         payload: {
           status: 'healthy',
           timestamp: new Date().toISOString(),
@@ -433,7 +433,7 @@ export class CustomAgentBackend {
       
       // Emit server start event
       this.emit({
-        type: EventTypes.CONNECTED,
+        type: EventType.CONNECTED,
         payload: {
           name: this.name,
           version: this.version,
@@ -456,7 +456,7 @@ export class CustomAgentBackend {
       
       // Emit server stop event
       this.emit({
-        type: EventTypes.DISCONNECTED,
+        type: EventType.DISCONNECTED,
         payload: {
           name: this.name,
           reason: 'shutdown',

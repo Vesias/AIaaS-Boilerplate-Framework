@@ -1,4 +1,4 @@
-import { AgentClient, EventTypes } from '@ag-ui/client'
+import { HttpAgent, EventType } from '@ag-ui/client'
 
 export interface AgentClientConfig {
   url?: string
@@ -27,7 +27,7 @@ export interface ToolCall {
   error?: string
 }
 
-export function createAgentClient(config: AgentClientConfig = {}): AgentClient {
+export function createHttpAgent(config: AgentClientConfig = {}): HttpAgent {
   const defaultConfig = {
     url: process.env.NEXT_PUBLIC_AGENT_URL || 'http://localhost:8000/agent',
     transport: 'sse' as const,
@@ -38,7 +38,7 @@ export function createAgentClient(config: AgentClientConfig = {}): AgentClient {
 
   const finalConfig = { ...defaultConfig, ...config }
 
-  const client = new AgentClient({
+  const client = new HttpAgent({
     url: finalConfig.url,
     transport: finalConfig.transport,
     headers: {
@@ -60,7 +60,7 @@ export function createAgentClient(config: AgentClientConfig = {}): AgentClient {
 }
 
 export class AgentSession {
-  private client: AgentClient
+  private client: HttpAgent
   private messages: AgentMessage[] = []
   private toolCalls: ToolCall[] = []
   private listeners: Map<string, Function[]> = new Map()
@@ -68,23 +68,23 @@ export class AgentSession {
   private connected: boolean = false
 
   constructor(config: AgentClientConfig = {}) {
-    this.client = createAgentClient(config)
+    this.client = createHttpAgent(config)
     this.sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     this.setupEventHandlers()
   }
 
   private setupEventHandlers() {
-    this.client.on(EventTypes.CONNECTED, () => {
+    this.client.on(EventType.CONNECTED, () => {
       this.connected = true
       this.emit('connected')
     })
 
-    this.client.on(EventTypes.DISCONNECTED, () => {
+    this.client.on(EventType.DISCONNECTED, () => {
       this.connected = false
       this.emit('disconnected')
     })
 
-    this.client.on(EventTypes.AGENT_MESSAGE, (event) => {
+    this.client.on(EventType.AGENT_MESSAGE, (event: any) => {
       const message: AgentMessage = {
         id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         type: 'agent',
@@ -96,7 +96,7 @@ export class AgentSession {
       this.emit('message', message)
     })
 
-    this.client.on(EventTypes.USER_MESSAGE, (event) => {
+    this.client.on(EventType.USER_MESSAGE, (event: any) => {
       const message: AgentMessage = {
         id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         type: 'user',
@@ -108,7 +108,7 @@ export class AgentSession {
       this.emit('message', message)
     })
 
-    this.client.on(EventTypes.TOOL_CALL, (event) => {
+    this.client.on(EventType.TOOL_CALL, (event: any) => {
       const toolCall: ToolCall = {
         id: event.payload.id || `tool_${Date.now()}`,
         name: event.payload.tool || event.payload.name,
@@ -126,7 +126,7 @@ export class AgentSession {
       this.emit('toolCall', toolCall)
     })
 
-    this.client.on(EventTypes.TOOL_RESULT, (event) => {
+    this.client.on(EventType.TOOL_RESULT, (event: any) => {
       const toolCall = this.toolCalls.find(tc => 
         tc.id === event.payload.id || tc.name === event.payload.tool
       )
@@ -138,7 +138,7 @@ export class AgentSession {
       }
     })
 
-    this.client.on(EventTypes.ERROR, (event) => {
+    this.client.on(EventType.ERROR, (event: any) => {
       const error = {
         message: event.payload.error || event.payload.message || 'Unknown error',
         code: event.payload.code,
@@ -147,11 +147,11 @@ export class AgentSession {
       this.emit('error', error)
     })
 
-    this.client.on(EventTypes.PROCESSING_START, () => {
+    this.client.on(EventType.PROCESSING_START, () => {
       this.emit('processingStart')
     })
 
-    this.client.on(EventTypes.PROCESSING_END, () => {
+    this.client.on(EventType.PROCESSING_END, () => {
       this.emit('processingEnd')
     })
   }
@@ -189,7 +189,7 @@ export class AgentSession {
     this.emit('message', message)
 
     await this.client.send({
-      type: EventTypes.USER_MESSAGE,
+      type: EventType.USER_MESSAGE,
       payload: {
         message: content,
         sessionId: this.sessionId,
@@ -206,7 +206,7 @@ export class AgentSession {
     const toolCallId = `tool_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
     await this.client.send({
-      type: EventTypes.TOOL_REQUEST,
+      type: EventType.TOOL_REQUEST,
       payload: {
         id: toolCallId,
         tool: toolName,
@@ -224,7 +224,7 @@ export class AgentSession {
     }
 
     await this.client.send({
-      type: EventTypes.COMPLETION_REQUEST,
+      type: EventType.COMPLETION_REQUEST,
       payload: {
         prompt,
         sessionId: this.sessionId,
@@ -386,5 +386,5 @@ export async function quickToolCall(
 }
 
 // Event type re-exports for convenience
-export { EventTypes } from '@ag-ui/client'
-export type { AgentEvent } from '@ag-ui/client'
+export { EventType } from '@ag-ui/client'
+export type { RawEventSchema as AgentEvent } from '@ag-ui/core'

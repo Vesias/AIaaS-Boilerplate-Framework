@@ -152,7 +152,7 @@ export function useAGUI(options: UseAGUIOptions = {}): UseAGUIReturn {
   const {
     sessionId: initialSessionId,
     autoStart = true,
-    configuration = {},
+    configuration: configOptions = {},
     endpoint = '/api/agui/stream',
     timeout = 30000,
     retryAttempts = 3,
@@ -221,7 +221,7 @@ export function useAGUI(options: UseAGUIOptions = {}): UseAGUIReturn {
     try {
       const sessionConfig = {
         ...defaultConfiguration,
-        ...configuration,
+        ...configOptions,
         ...config,
       }
 
@@ -258,7 +258,7 @@ export function useAGUI(options: UseAGUIOptions = {}): UseAGUIReturn {
     } finally {
       setIsLoading(false)
     }
-  }, [session, user, initialSessionId, configuration, defaultConfiguration, onSessionStart, onError])
+  }, [session, user, initialSessionId, configOptions, defaultConfiguration, onSessionStart, onError])
 
   // End session
   const endSession = useCallback(async (): Promise<void> => {

@@ -7,13 +7,6 @@ import {
   HttpAgent,
   EventType
 } from '@ag-ui/client'
-import type { 
-  RunAgentInput,
-  Message,
-  State,
-  Tool,
-  BaseEvent
-} from '@ag-ui/core'
 import {
   RoomicorAgent,
   RoomicorAgentConfig,
@@ -24,7 +17,12 @@ import {
   AGUIResponse,
   AgentTemplates,
   AgentTemplate,
-  AgentConfig
+  AgentConfig,
+  RunAgentInput,
+  Message,
+  State,
+  Tool,
+  BaseEvent
 } from '@/types/ag-ui'
 import { createDatabaseService } from './database'
 
@@ -163,56 +161,64 @@ export class RoomicorAGUIProtocol extends EventEmitter {
       const runInput: RunAgentInput = {
         threadId: session.threadId,
         runId,
-        message,
         messages: [
           ...session.context.initialMessages,
           {
+            id: `msg_${Date.now()}`,
             role: 'user',
-            content: message,
-            timestamp: new Date()
-          }
+            content: message
+          } as Message
         ],
+        tools: session.context.tools || [],
+        context: [],
+        state: session.context.initialState,
         ...options
       }
       
       // Set up event collection
       const events: RoomicorAgentEvent[] = []
-      const eventHandler = (event: RoomicorAgentEvent) => {
-        events.push(event)
-        session.history.push(event)
-        session.updatedAt = new Date()
+      
+      // Run the agent using runAgent method (returns Observable)
+      const eventStream = await agent.runAgent(runInput)
+      
+      // Convert to Promise for easier handling
+      return new Promise((resolve, reject) => {
+        eventStream.subscribe({
+          next: (event: BaseEvent) => {
+            const roomicorEvent = event as RoomicorAgentEvent
+            events.push(roomicorEvent)
+            session.history.push(roomicorEvent)
+            session.updatedAt = new Date()
+            
+            // Broadcast to active streams
+            this.broadcastEvent(sessionId, roomicorEvent)
+            
+            // Emit to main protocol
+            this.emit('agentEvent', roomicorEvent)
+          },
+          error: (error: any) => {
+            console.error('Agent stream error:', error)
+            reject(error)
+          },
+          complete: () => {
+            console.log('Agent stream completed')
+            // Don't resolve here, wait for the final response
+          }
+        })
         
-        // Broadcast to active streams
-        this.broadcastEvent(sessionId, event)
-        
-        // Emit to main protocol
-        this.emit('agentEvent', event)
-      }
+        // Resolve after a brief delay to collect events
+        setTimeout(() => {
+          resolve({
+            success: true,
+            events,
+            sessionId,
+            threadId: session.threadId,
+            runId
+          })
+        }, 100)
+      })
       
-      // Listen to agent events
-      agent.on('event', eventHandler)
-      
-      // Run the agent (this triggers the AG-UI event sequence)
-      await agent.run(runInput)
-      
-      // Clean up event listener
-      agent.off('event', eventHandler)
-      
-      // Emit RUN_FINISHED event (AG-UI protocol requirement)
-      const runFinishEvent = this.eventProcessor.createRunFinishEvent(session.threadId, runId)
-      events.push(runFinishEvent)
-      session.history.push(runFinishEvent)
-      this.broadcastEvent(sessionId, runFinishEvent)
-      
-      session.status = 'completed'
-      
-      return {
-        success: true,
-        events,
-        sessionId,
-        threadId: session.threadId,
-        runId
-      }
+      // This is handled in the Promise above
       
     } catch (error) {
       session.status = 'error'
@@ -268,7 +274,7 @@ export class RoomicorAGUIProtocol extends EventEmitter {
   getAvailableAgents(): Record<string, RoomicorAgentConfig> {
     const result: Record<string, RoomicorAgentConfig> = {}
     this.agents.forEach((agent, id) => {
-      result[id] = agent.config as RoomicorAgentConfig
+      result[id] = agent.config
     })
     return result
   }
@@ -366,7 +372,13 @@ export class RoomicorAGUIProtocol extends EventEmitter {
       messageId,
       threadId: session.threadId,
       runId: session.runId,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      rawEvent: {
+        type: EventType.TEXT_MESSAGE_START,
+        messageId,
+        threadId: session.threadId,
+        runId: session.runId
+      }
     } as RoomicorAgentEvent
     
     session.history.push(messageStartEvent)
@@ -443,7 +455,12 @@ export class RoomicorAGUIProtocol extends EventEmitter {
         result,
         threadId: session.threadId,
         runId: session.runId,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        rawEvent: {
+          type: EventType.TOOL_CALL_END,
+          toolName,
+          result
+        }
       } as RoomicorAgentEvent
       
       session.history.push(toolEndEvent)

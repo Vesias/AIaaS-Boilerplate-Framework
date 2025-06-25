@@ -7,24 +7,35 @@ import {
   EventType
 } from '@ag-ui/client'
 import type { 
-  RunAgentInput,
-  Message,
-  State,
-  Tool,
-  BaseEvent
+  MessageSchema,
+  StateSchema,
+  ToolSchema,
+  RawEventSchema
 } from '@ag-ui/core'
 import { Observable } from 'rxjs'
+
+// Extract types from schemas
+export type Message = typeof MessageSchema._type
+export type State = typeof StateSchema._type
+export type Tool = typeof ToolSchema._type
+export type BaseEvent = typeof RawEventSchema._type
+
+// RunAgentInput type (based on AG-UI specification)
+export interface RunAgentInput {
+  threadId: string
+  runId: string
+  messages: Message[]
+  tools: Tool[]
+  context: any[]
+  state?: any
+  forwardedProps?: any
+}
 
 // Re-export official AG-UI types
 export {
   AbstractAgent,
   HttpAgent,
-  EventType,
-  type RunAgentInput,
-  type Message,
-  type State,
-  type Tool,
-  type BaseEvent
+  EventType
 }
 
 // AgentConfig interface (not exported from @ag-ui/core)
@@ -52,6 +63,13 @@ export interface RoomicorAgentEvent extends BaseEvent {
   metadata?: Record<string, any>
   cost?: number
   latency?: number
+  messageId?: string
+  delta?: string
+  toolName?: string
+  args?: any
+  result?: any
+  error?: string
+  state?: any
 }
 
 export interface AGUISession {
@@ -164,11 +182,18 @@ export class AGUIEventProcessor {
 
 // Custom agent implementation for Roomicor
 export class RoomicorAgent extends AbstractAgent {
-  private config: RoomicorAgentConfig
+  public config: RoomicorAgentConfig
   private eventProcessor: AGUIEventProcessor
   
   constructor(config: RoomicorAgentConfig) {
-    super(config)
+    super({
+      agentId: config.agentId,
+      description: config.description,
+      threadId: config.threadId,
+      initialMessages: config.initialMessages || [],
+      initialState: config.initialState || {},
+      debug: config.debug || false
+    })
     this.config = config
     this.eventProcessor = new AGUIEventProcessor()
   }
