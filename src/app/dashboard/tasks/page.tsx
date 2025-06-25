@@ -1,0 +1,518 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useAuth } from '@clerk/nextjs'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Badge } from '@/components/ui/badge'
+import { Plus, Search, Calendar, CheckCircle, Circle, Clock, Filter, BarChart3, Kanban, List, Grid, Brain, TrendingUp, Archive, User, AlertTriangle } from 'lucide-react'
+import { useToast } from '@/components/ui/use-toast'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Progress } from '@/components/ui/progress'
+import { Separator } from '@/components/ui/separator'
+import { ScrollArea } from '@/components/ui/scroll-area'
+
+interface Task {
+  id: string
+  title: string
+  content?: string
+  completed: boolean
+  priority: 'low' | 'medium' | 'high'
+  status: 'todo' | 'in_progress' | 'review' | 'done'
+  dueDate?: string
+  assignee?: string
+  tags: string[]
+  estimatedHours?: number
+  actualHours?: number
+  createdAt: string
+  updatedAt: string
+}
+
+interface AITaskSuggestion {
+  id: string
+  title: string
+  description: string
+  priority: 'low' | 'medium' | 'high'
+  estimatedHours: number
+  tags: string[]
+  reasoning: string
+}
+
+export default function TasksPage() {
+  const { userId } = useAuth()
+  const { toast } = useToast()
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [showTaskForm, setShowTaskForm] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('all')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'calendar'>('list')
+  const [aiSuggestions, setAiSuggestions] = useState<AITaskSuggestion[]>([])
+  const [loadingAI, setLoadingAI] = useState(false)
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [dateRange, setDateRange] = useState<'all' | 'today' | 'week' | 'month'>('all')
+
+  // Mock data for demonstration
+  useEffect(() => {
+    // In a real app, this would fetch from your API
+    const mockTasks: Task[] = [
+      {
+        id: '1',
+        title: 'Set up payment processing',
+        content: 'Configure Stripe webhooks and test payments',
+        completed: false,
+        priority: 'high',
+        status: 'in_progress',
+        dueDate: '2024-01-15',
+        assignee: 'John Doe',
+        tags: ['backend', 'payments'],
+        estimatedHours: 8,
+        actualHours: 5,
+        createdAt: '2024-01-10',
+        updatedAt: '2024-01-14'
+      },
+      {
+        id: '2',
+        title: 'Design user dashboard',
+        content: 'Create wireframes and implement dashboard UI',
+        completed: true,
+        priority: 'medium',
+        status: 'done',
+        assignee: 'Jane Smith',
+        tags: ['frontend', 'ui'],
+        estimatedHours: 12,
+        actualHours: 10,
+        createdAt: '2024-01-08',
+        updatedAt: '2024-01-12'
+      },
+      {
+        id: '3',
+        title: 'Write API documentation',
+        content: 'Document all API endpoints with examples',
+        completed: false,
+        priority: 'low',
+        status: 'todo',
+        dueDate: '2024-01-20',
+        assignee: 'Mike Johnson',
+        tags: ['documentation'],
+        estimatedHours: 6,
+        createdAt: '2024-01-12',
+        updatedAt: '2024-01-12'
+      },
+      {
+        id: '4',
+        title: 'Implement user authentication',
+        content: 'Set up Clerk authentication and user management',
+        completed: false,
+        priority: 'high',
+        status: 'review',
+        dueDate: '2024-01-18',
+        assignee: 'Sarah Wilson',
+        tags: ['backend', 'auth'],
+        estimatedHours: 10,
+        actualHours: 12,
+        createdAt: '2024-01-11',
+        updatedAt: '2024-01-15'
+      }
+    ]
+    setTasks(mockTasks)
+    setLoading(false)
+    generateAISuggestions()
+  }, [])
+
+  const generateAISuggestions = async () => {
+    setLoadingAI(true)
+    // Simulate AI processing
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    
+    const suggestions: AITaskSuggestion[] = [
+      {
+        id: 'ai-1',
+        title: 'Implement real-time notifications',
+        description: 'Based on your payment processing work, users would benefit from real-time payment status notifications',
+        priority: 'medium',
+        estimatedHours: 6,
+        tags: ['frontend', 'notifications'],
+        reasoning: 'Improves user experience and reduces support tickets'
+      },
+      {
+        id: 'ai-2',
+        title: 'Add task time tracking',
+        description: 'Your dashboard shows time estimates - adding time tracking would improve project management',
+        priority: 'low',
+        estimatedHours: 4,
+        tags: ['frontend', 'productivity'],
+        reasoning: 'Helps with better time estimation and productivity insights'
+      },
+      {
+        id: 'ai-3',
+        title: 'Set up error monitoring',
+        description: 'With authentication and payments in place, error monitoring becomes critical',
+        priority: 'high',
+        estimatedHours: 3,
+        tags: ['backend', 'monitoring'],
+        reasoning: 'Essential for production readiness and user experience'
+      }
+    ]
+    
+    setAiSuggestions(suggestions)
+    setLoadingAI(false)
+  }
+
+  const filteredTasks = tasks.filter(task => {
+    const matchesFilter = filter === 'all' || 
+      (filter === 'completed' && task.completed) ||
+      (filter === 'pending' && !task.completed) ||
+      (filter === 'overdue' && !task.completed && task.dueDate && new Date(task.dueDate) < new Date())
+    
+    const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      task.content?.toLowerCase().includes(searchTerm.toLowerCase())
+    
+    const matchesTags = selectedTags.length === 0 || selectedTags.some(tag => task.tags.includes(tag))
+    
+    const matchesDate = dateRange === 'all' || (
+      dateRange === 'today' && new Date(task.updatedAt).toDateString() === new Date().toDateString()
+    ) || (
+      dateRange === 'week' && new Date(task.updatedAt) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    ) || (
+      dateRange === 'month' && new Date(task.updatedAt) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    )
+    
+    return matchesFilter && matchesSearch && matchesTags && matchesDate
+  })
+
+  const taskStats = {
+    total: tasks.length,
+    completed: tasks.filter(t => t.completed).length,
+    pending: tasks.filter(t => !t.completed).length,
+    overdue: tasks.filter(t => 
+      !t.completed && 
+      t.dueDate && 
+      new Date(t.dueDate) < new Date()
+    ).length,
+    inProgress: tasks.filter(t => t.status === 'in_progress').length,
+    review: tasks.filter(t => t.status === 'review').length,
+    totalEstimatedHours: tasks.reduce((sum, t) => sum + (t.estimatedHours || 0), 0),
+    totalActualHours: tasks.reduce((sum, t) => sum + (t.actualHours || 0), 0),
+    completionRate: tasks.length > 0 ? Math.round((tasks.filter(t => t.completed).length / tasks.length) * 100) : 0
+  }
+
+  const allTags = Array.from(new Set(tasks.flatMap(task => task.tags)))
+
+  const handleCreateTask = async (formData: FormData) => {
+    const tagsString = formData.get('tags') as string
+    const newTask: Task = {
+      id: Date.now().toString(),
+      title: formData.get('title') as string,
+      content: formData.get('content') as string,
+      completed: false,
+      priority: (formData.get('priority') as 'low' | 'medium' | 'high') || 'medium',
+      status: 'todo',
+      dueDate: formData.get('dueDate') as string || undefined,
+      assignee: formData.get('assignee') as string || undefined,
+      tags: tagsString ? tagsString.split(',').map(tag => tag.trim()) : [],
+      estimatedHours: parseInt(formData.get('estimatedHours') as string) || undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+
+    setTasks(prev => [newTask, ...prev])
+    setShowTaskForm(false)
+    toast({
+      title: "Task created",
+      description: "Your task has been created successfully."
+    })
+  }
+
+  const createTaskFromAI = (suggestion: AITaskSuggestion) => {
+    const newTask: Task = {
+      id: Date.now().toString(),
+      title: suggestion.title,
+      content: suggestion.description + '\n\nAI Reasoning: ' + suggestion.reasoning,
+      completed: false,
+      priority: suggestion.priority,
+      status: 'todo',
+      tags: suggestion.tags,
+      estimatedHours: suggestion.estimatedHours,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+
+    setTasks(prev => [newTask, ...prev])
+    setAiSuggestions(prev => prev.filter(s => s.id !== suggestion.id))
+    toast({
+      title: "AI task created",
+      description: "Task created from AI suggestion."
+    })
+  }
+
+  const toggleTask = (id: string) => {
+    setTasks(prev => prev.map(task => 
+      task.id === id ? { 
+        ...task, 
+        completed: !task.completed,
+        status: !task.completed ? 'done' : 'todo',
+        updatedAt: new Date().toISOString()
+      } : task
+    ))
+  }
+
+  const updateTaskStatus = (id: string, status: Task['status']) => {
+    setTasks(prev => prev.map(task => 
+      task.id === id ? { 
+        ...task, 
+        status,
+        completed: status === 'done',
+        updatedAt: new Date().toISOString()
+      } : task
+    ))
+  }
+
+  const deleteTask = (id: string) => {
+    setTasks(prev => prev.filter(task => task.id !== id))
+    toast({
+      title: "Task deleted",
+      description: "The task has been removed."
+    })
+  }
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'high': return 'text-red-500'
+      case 'medium': return 'text-yellow-500'
+      case 'low': return 'text-green-500'
+      default: return 'text-gray-500'
+    }
+  }
+
+  return (
+    <div className="flex-1 space-y-4 p-8 pt-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Tasks</h2>
+          <p className="text-muted-foreground">
+            Manage your tasks and stay productive
+          </p>
+        </div>
+        <Button onClick={() => setShowTaskForm(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          New Task
+        </Button>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Tasks</CardTitle>
+            <Circle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{taskStats.total}</div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Completed</CardTitle>
+            <CheckCircle className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{taskStats.completed}</div>
+            <p className="text-xs text-muted-foreground">
+              {taskStats.total > 0 ? Math.round((taskStats.completed / taskStats.total) * 100) : 0}% completion rate
+            </p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            <Clock className="h-4 w-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{taskStats.pending}</div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Overdue</CardTitle>
+            <Calendar className="h-4 w-4 text-red-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{taskStats.overdue}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters and Search */}
+      <div className="flex items-center gap-4">
+        <div className="flex-1">
+          <Input
+            placeholder="Search tasks..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="max-w-sm"
+          />
+        </div>
+        <Select value={filter} onValueChange={setFilter}>
+          <SelectTrigger className="w-[180px]">
+            <Filter className="mr-2 h-4 w-4" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Tasks</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Tasks List */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Tasks</CardTitle>
+          <CardDescription>
+            Your current tasks and their status
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-8">Loading tasks...</div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No tasks found. Create your first task to get started!
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredTasks.map((task) => (
+                <div
+                  key={task.id}
+                  className={`flex items-center gap-4 p-4 border rounded-lg ${
+                    task.completed ? 'bg-muted/50' : ''
+                  }`}
+                >
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleTask(task.id)}
+                    className="p-0 h-auto"
+                  >
+                    {task.completed ? (
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                    ) : (
+                      <Circle className="h-5 w-5" />
+                    )}
+                  </Button>
+                  
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className={`font-medium ${task.completed ? 'line-through text-muted-foreground' : ''}`}>
+                        {task.title}
+                      </h3>
+                      <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                        {task.priority}
+                      </Badge>
+                    </div>
+                    {task.content && (
+                      <p className={`text-sm ${task.completed ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
+                        {task.content}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                      <span>Created: {new Date(task.createdAt).toLocaleDateString()}</span>
+                      {task.dueDate && (
+                        <span className={new Date(task.dueDate) < new Date() && !task.completed ? 'text-red-500' : ''}>
+                          Due: {new Date(task.dueDate).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteTask(task.id)}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    Delete
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Create Task Dialog */}
+      <Dialog open={showTaskForm} onOpenChange={setShowTaskForm}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Create New Task</DialogTitle>
+          </DialogHeader>
+          <form action={handleCreateTask} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="title">Title</Label>
+              <Input
+                id="title"
+                name="title"
+                placeholder="Enter task title"
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="content">Description</Label>
+              <Textarea
+                id="content"
+                name="content"
+                placeholder="Enter task description (optional)"
+                rows={3}
+              />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="priority">Priority</Label>
+                <Select name="priority" defaultValue="medium">
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="dueDate">Due Date</Label>
+                <Input
+                  id="dueDate"
+                  name="dueDate"
+                  type="date"
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setShowTaskForm(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">
+                Create Task
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
