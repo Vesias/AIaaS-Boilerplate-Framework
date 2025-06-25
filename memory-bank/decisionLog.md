@@ -1,4 +1,4 @@
-# Decision Log - Next.js 15 MicroSaaS Boilerplate
+# Decision Log - Next.js 15 AIaaS Boilerplate
 
 ## Architektur-Entscheidungen
 
@@ -85,14 +85,14 @@ plugins: [tailwindcssAnimate]
 **Ergebnis:** ✅ Development Server läuft fehlerfrei, Tailwind CSS v4 vollständig konfiguriert
 **Trade-offs:** Keine negativen Auswirkungen, nur Vorteile durch moderne Syntax
 ### [2025-06-25 20:09:00] Database-Wahl: Supabase Integration
-**Entscheidung:** Supabase als Primary Database-Lösung für das MicroSaaS Boilerplate
+**Entscheidung:** Supabase als Primary Database-Lösung für das AIaaS Boilerplate
 **Grund:**
 - Nahtlose Integration mit Next.js 15 und TypeScript
 - Real-time Subscriptions für moderne UX
 - Integrierte Authentication (kompatibel mit Clerk)
 - PostgreSQL-basiert mit vollständiger SQL-Unterstützung
 - Automatische API-Generierung
-- Optimale Performance für MicroSaaS-Anwendungen
+- Optimale Performance für AIaaS-Anwendungen
 
 **Alternativen:** Prisma + PostgreSQL, Drizzle, MongoDB
 **Trade-offs:** Vendor-Lock-in, aber hervorragende DX und Feature-Set

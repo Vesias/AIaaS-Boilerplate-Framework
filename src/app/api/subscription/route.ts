@@ -20,6 +20,10 @@ export async function GET() {
     }
 
     // Get additional details from Stripe
+    if (!stripe) {
+      return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
+    }
+    
     const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripe_subscription_id, {
       expand: ['default_payment_method', 'items.data.price.product']
     })

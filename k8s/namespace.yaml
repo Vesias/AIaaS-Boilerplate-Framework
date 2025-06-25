@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: roomicor
+  labels:
+    name: roomicor
+    environment: production
+    app.kubernetes.io/name: roomicor
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: kubectl
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: roomicor-staging
+  labels:
+    name: roomicor-staging
+    environment: staging
+    app.kubernetes.io/name: roomicor
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: kubectl

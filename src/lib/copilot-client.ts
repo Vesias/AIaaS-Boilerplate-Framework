@@ -1,6 +1,6 @@
 /**
  * CopilotKit Configuration and Client Setup
- * Provides AI chat assistance integrated with the MicroSaaS platform
+ * Provides AI chat assistance integrated with the AIaaS platform
  */
 
 import { CopilotRuntimeClient } from '@copilotkit/react-core'
@@ -21,7 +21,7 @@ export const copilotConfig = {
     maxTokens: 1000,
     
     // UI customization
-    instructions: `You are an AI assistant for a MicroSaaS automation platform. You help users with:
+    instructions: `You are an AI assistant for an AIaaS automation platform. You help users with:
     
     **Core Features:**
     - Setting up automation workflows with n8n and Make.com

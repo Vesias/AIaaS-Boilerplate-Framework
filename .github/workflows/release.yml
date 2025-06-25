@@ -1,0 +1,551 @@
+name: Release Management
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Type of release'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - prerelease
+      create_github_release:
+        description: 'Create GitHub release'
+        required: false
+        default: true
+        type: boolean
+      deploy_to_production:
+        description: 'Deploy to production after release'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '9'
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Validate release readiness
+  validate-release:
+    name: Validate Release Readiness
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should-release: ${{ steps.validate.outputs.should-release }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+            # Extract version from tag
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Creating release for existing tag: v$VERSION"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # Calculate next version based on input
+            current_version=$(cat package.json | jq -r '.version')
+            echo "Current version: $current_version"
+            
+            case "${{ github.event.inputs.release_type }}" in
+              "major")
+                new_version=$(npx semver $current_version -i major)
+                ;;
+              "minor")
+                new_version=$(npx semver $current_version -i minor)
+                ;;
+              "patch")
+                new_version=$(npx semver $current_version -i patch)
+                ;;
+              "prerelease")
+                new_version=$(npx semver $current_version -i prerelease --preid=beta)
+                ;;
+            esac
+            
+            echo "version=$new_version" >> $GITHUB_OUTPUT
+            echo "New version will be: $new_version"
+          fi
+
+      - name: Validate release conditions
+        id: validate
+        run: |
+          echo "🔍 Validating release readiness..."
+          should_release=true
+          
+          # Check if on main branch (for manual releases)
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "❌ Releases can only be created from main branch"
+            should_release=false
+          fi
+          
+          # Check for uncommitted changes
+          if ! git diff --quiet; then
+            echo "❌ Working directory has uncommitted changes"
+            should_release=false
+          fi
+          
+          # Ensure tests pass
+          echo "🧪 Running tests..."
+          if ! pnpm test; then
+            echo "❌ Tests are failing"
+            should_release=false
+          fi
+          
+          # Check for security vulnerabilities
+          echo "🔒 Checking for security vulnerabilities..."
+          if ! pnpm audit --audit-level high; then
+            echo "⚠️ High severity vulnerabilities found"
+            echo "Consider fixing these before release"
+          fi
+          
+          # Validate build works
+          echo "🏗️ Validating build..."
+          if ! pnpm build; then
+            echo "❌ Build is failing"
+            should_release=false
+          fi
+          
+          echo "should-release=$should_release" >> $GITHUB_OUTPUT
+          
+          if [[ "$should_release" == "true" ]]; then
+            echo "✅ Release validation passed"
+          else
+            echo "❌ Release validation failed"
+            exit 1
+          fi
+
+  # Create release
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: validate-release
+    if: needs.validate-release.outputs.should-release == 'true'
+    outputs:
+      release-id: ${{ steps.create-release.outputs.id }}
+      upload-url: ${{ steps.create-release.outputs.upload_url }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Update version and create tag (manual release only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          VERSION=${{ needs.validate-release.outputs.version }}
+          echo "Updating package.json to version $VERSION"
+          
+          # Update package.json version
+          pnpm version $VERSION --no-git-tag-version
+          
+          # Commit version bump
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: bump version to v$VERSION"
+          
+          # Create tag
+          git tag "v$VERSION"
+          git push origin main
+          git push origin "v$VERSION"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION=${{ needs.validate-release.outputs.version }}
+          echo "📝 Generating changelog for v$VERSION..."
+          
+          # Get previous tag
+          previous_tag=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          
+          if [[ -n "$previous_tag" ]]; then
+            echo "Generating changelog from $previous_tag to v$VERSION"
+            changelog=$(git log $previous_tag..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          else
+            echo "No previous tag found, generating changelog from beginning"
+            changelog=$(git log --pretty=format:"- %s (%h)" --no-merges | head -20)
+          fi
+          
+          # Create changelog content
+          cat > CHANGELOG_TEMP.md << EOF
+          ## What's Changed
+          
+          $changelog
+          
+          ## Docker Images
+          
+          - \`ghcr.io/${{ github.repository }}:$VERSION\`
+          - \`ghcr.io/${{ github.repository }}:latest\`
+          
+          ## Installation
+          
+          ### Docker
+          \`\`\`bash
+          docker pull ghcr.io/${{ github.repository }}:$VERSION
+          \`\`\`
+          
+          ### From Source
+          \`\`\`bash
+          git clone https://github.com/${{ github.repository }}.git
+          cd ${{ github.repository_owner }}
+          git checkout v$VERSION
+          pnpm install
+          pnpm build
+          pnpm start
+          \`\`\`
+          
+          ## Upgrading
+          
+          ### Database Migrations
+          Run any pending database migrations before deploying this version.
+          
+          ### Environment Variables
+          Check for any new required environment variables in the updated \`.env.example\`.
+          
+          ### Breaking Changes
+          
+          ${changelog} | grep -i "break\|breaking" || echo "No breaking changes in this release."
+          
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/$previous_tag...v$VERSION
+          EOF
+          
+          echo "changelog-file=CHANGELOG_TEMP.md" >> $GITHUB_OUTPUT
+
+      - name: Build release assets
+        run: |
+          echo "📦 Building release assets..."
+          
+          # Install dependencies and build
+          pnpm install --frozen-lockfile
+          pnpm build
+          
+          # Create release archive
+          mkdir -p release-assets
+          tar -czf release-assets/roomicor-v${{ needs.validate-release.outputs.version }}-build.tar.gz .next package.json
+          
+          # Generate checksums
+          cd release-assets
+          sha256sum *.tar.gz > checksums.txt
+          cd ..
+
+      - name: Create GitHub Release
+        id: create-release
+        if: github.event.inputs.create_github_release != 'false'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ needs.validate-release.outputs.version }}
+          release_name: Release v${{ needs.validate-release.outputs.version }}
+          body_path: ${{ steps.changelog.outputs.changelog-file }}
+          draft: false
+          prerelease: ${{ contains(needs.validate-release.outputs.version, 'beta') || contains(needs.validate-release.outputs.version, 'alpha') || contains(needs.validate-release.outputs.version, 'rc') }}
+
+      - name: Upload release assets
+        if: steps.create-release.outputs.id
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create-release.outputs.upload_url }}
+          asset_path: release-assets/roomicor-v${{ needs.validate-release.outputs.version }}-build.tar.gz
+          asset_name: roomicor-v${{ needs.validate-release.outputs.version }}-build.tar.gz
+          asset_content_type: application/gzip
+
+      - name: Upload checksums
+        if: steps.create-release.outputs.id
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create-release.outputs.upload_url }}
+          asset_path: release-assets/checksums.txt
+          asset_name: checksums.txt
+          asset_content_type: text/plain
+
+  # Build and push Docker images
+  build-docker-images:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    needs: [validate-release, create-release]
+    if: needs.validate-release.outputs.should-release == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=v${{ needs.validate-release.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.validate-release.outputs.version }}
+            type=semver,pattern={{major}},value=v${{ needs.validate-release.outputs.version }}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ needs.validate-release.outputs.version }}
+            BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+            VCS_REF=${{ github.sha }}
+
+  # Deploy to production (if requested)
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [validate-release, create-release, build-docker-images]
+    if: github.event.inputs.deploy_to_production == 'true' && needs.validate-release.outputs.should-release == 'true'
+    environment: production
+
+    steps:
+      - name: Trigger production deployment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const result = await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'deploy.yml',
+              ref: 'main',
+              inputs: {
+                environment: 'production',
+                skip_tests: 'false'
+              }
+            });
+            
+            console.log('Production deployment triggered:', result.status);
+
+  # Update documentation
+  update-docs:
+    name: Update Documentation
+    runs-on: ubuntu-latest
+    needs: [validate-release, create-release]
+    if: needs.validate-release.outputs.should-release == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update README.md version badge
+        run: |
+          VERSION=${{ needs.validate-release.outputs.version }}
+          echo "📝 Updating documentation for v$VERSION..."
+          
+          # Update version badge in README
+          if [ -f README.md ]; then
+            sed -i "s/version-[^-]*-blue/version-$VERSION-blue/g" README.md
+            
+            # Update installation instructions if they exist
+            sed -i "s/git checkout v[0-9]\+\.[0-9]\+\.[0-9]\+/git checkout v$VERSION/g" README.md
+          fi
+
+      - name: Update CHANGELOG.md
+        run: |
+          VERSION=${{ needs.validate-release.outputs.version }}
+          DATE=$(date +"%Y-%m-%d")
+          
+          if [ ! -f CHANGELOG.md ]; then
+            echo "# Changelog" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "All notable changes to this project will be documented in this file." >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          fi
+          
+          # Prepend new version to changelog
+          {
+            echo "# Changelog"
+            echo ""
+            echo "## [$VERSION] - $DATE"
+            echo ""
+            cat ${{ needs.create-release.outputs.changelog-file || 'CHANGELOG_TEMP.md' }} | grep -A 100 "## What's Changed" | tail -n +2
+            echo ""
+            tail -n +3 CHANGELOG.md
+          } > CHANGELOG_NEW.md
+          
+          mv CHANGELOG_NEW.md CHANGELOG.md
+
+      - name: Commit documentation updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add README.md CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "No documentation changes to commit"
+          else
+            git commit -m "docs: update documentation for v${{ needs.validate-release.outputs.version }}"
+            git push origin main
+          fi
+
+  # Post-release notifications
+  notify-release:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs: [validate-release, create-release, build-docker-images]
+    if: always() && needs.validate-release.outputs.should-release == 'true'
+
+    steps:
+      - name: Notify success
+        if: needs.create-release.result == 'success' && needs.build-docker-images.result == 'success'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          channel: '#releases'
+          text: |
+            🎉 New release published! 
+            
+            **Version:** v${{ needs.validate-release.outputs.version }}
+            **Repository:** ${{ github.repository }}
+            **Release Notes:** ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ needs.validate-release.outputs.version }}
+            **Docker Image:** ghcr.io/${{ github.repository }}:${{ needs.validate-release.outputs.version }}
+            
+            Ready for deployment! 🚀
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify failure
+        if: needs.create-release.result == 'failure' || needs.build-docker-images.result == 'failure'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          channel: '#releases'
+          text: |
+            ❌ Release failed! 
+            
+            **Version:** v${{ needs.validate-release.outputs.version }}
+            **Repository:** ${{ github.repository }}
+            **Workflow:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            @channel Please investigate immediately.
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Create follow-up tasks
+        if: needs.create-release.result == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Create issue for post-release tasks
+            const version = '${{ needs.validate-release.outputs.version }}';
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Post-release tasks for v${version}`,
+              body: `## Post-release Checklist for v${version}
+              
+              Please complete the following tasks after the release:
+              
+              ### Deployment
+              - [ ] Deploy to staging environment
+              - [ ] Run integration tests on staging
+              - [ ] Deploy to production (if not automated)
+              - [ ] Verify production deployment health
+              
+              ### Communication
+              - [ ] Announce release in team channels
+              - [ ] Update customer-facing documentation
+              - [ ] Send release notes to stakeholders
+              - [ ] Update website/landing page if needed
+              
+              ### Monitoring
+              - [ ] Monitor error rates and performance for 24 hours
+              - [ ] Check user feedback and support tickets
+              - [ ] Verify key metrics are stable
+              
+              ### Follow-up
+              - [ ] Plan next release milestone
+              - [ ] Document any lessons learned
+              - [ ] Update release process if needed
+              
+              **Release Information:**
+              - Version: v${version}
+              - Release Date: ${new Date().toISOString().split('T')[0]}
+              - GitHub Release: ${context.payload.repository.html_url}/releases/tag/v${version}
+              - Docker Image: ghcr.io/${context.payload.repository.full_name}:${version}`,
+              labels: ['release', 'task'],
+              assignees: ['${{ github.actor }}']
+            });
+
+  # Clean up old releases
+  cleanup:
+    name: Cleanup Old Releases
+    runs-on: ubuntu-latest
+    needs: [create-release]
+    if: needs.create-release.result == 'success'
+
+    steps:
+      - name: Cleanup old Docker images
+        run: |
+          echo "🧹 Cleaning up old Docker images..."
+          echo "This would typically:"
+          echo "1. Keep latest 10 release tags"
+          echo "2. Remove untagged images older than 30 days"
+          echo "3. Clean up intermediate build layers"
+          
+          # Actual cleanup would be implemented with GitHub API or registry-specific tools

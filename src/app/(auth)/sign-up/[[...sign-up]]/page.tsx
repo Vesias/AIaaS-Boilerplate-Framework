@@ -8,7 +8,7 @@ export default function SignUpPage() {
           Konto erstellen
         </h1>
         <p className="text-slate-600 dark:text-slate-400 mt-2">
-          Starten Sie mit Ihrem neuen MicroSaaS-Konto
+          Starten Sie mit Ihrem neuen AIaaS-Konto
         </p>
       </div>
       

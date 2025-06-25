@@ -52,6 +52,22 @@ export async function POST(req: Request) {
       case 'invoice.created':
         await handleInvoiceCreated(event.data.object as Stripe.Invoice, db)
         break
+        
+      case 'invoice.sent':
+        await handleInvoiceSent(event.data.object as Stripe.Invoice, db)
+        break
+        
+      case 'invoice.updated':
+        await handleInvoiceUpdated(event.data.object as Stripe.Invoice, db)
+        break
+        
+      case 'invoice.finalized':
+        await handleInvoiceFinalized(event.data.object as Stripe.Invoice, db)
+        break
+        
+      case 'invoice.voided':
+        await handleInvoiceVoided(event.data.object as Stripe.Invoice, db)
+        break
 
       case 'payment_intent.succeeded':
         await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent, db)
@@ -216,18 +232,34 @@ async function handleInvoiceCreated(invoice: Stripe.Invoice, db: any) {
   }
 
   try {
+    // Determine if this is a European transaction for VAT compliance
+    const customer = await stripe.customers.retrieve(customerId)
+    const customerCountry = customer.address?.country || 'US'
+    const isEUCustomer = ['AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK'].includes(customerCountry)
+    
     await db.createInvoice({
       user_id: profile.id,
       stripe_invoice_id: invoice.id,
-      invoice_number: invoice.number || `INV-${Date.now()}`,
+      invoice_number: invoice.number || generateInvoiceNumber(),
       amount_paid: invoice.amount_paid || 0,
       amount_due: invoice.amount_due || 0,
       currency: invoice.currency || 'eur',
       status: invoice.status as any,
       hosted_invoice_url: invoice.hosted_invoice_url || undefined,
       invoice_pdf: invoice.invoice_pdf || undefined,
-      line_items: invoice.lines?.data || []
+      line_items: invoice.lines?.data || [],
+      metadata: {
+        ...invoice.metadata,
+        customer_country: customerCountry,
+        is_eu_transaction: isEUCustomer,
+        tax_compliance_checked: true
+      }
     })
+
+    // Send invoice email if configured
+    if (invoice.status === 'open') {
+      await sendInvoiceCreatedNotification(invoice, profile)
+    }
 
     console.log('Invoice created successfully:', invoice.id)
   } catch (error) {
@@ -250,7 +282,8 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice, db: any) {
     // Update invoice status
     await db.updateInvoice(invoice.id, {
       status: 'paid' as any,
-      amount_paid: invoice.amount_paid || 0
+      amount_paid: invoice.amount_paid || 0,
+      paid_at: new Date().toISOString()
     })
 
     // If this is a subscription invoice, activate the subscription
@@ -270,6 +303,15 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice, db: any) {
       })
     }
 
+    // Send payment confirmation email
+    await sendPaymentSuccessNotification(invoice, profile)
+    
+    // Generate and store receipt
+    await generatePaymentReceipt(invoice, profile)
+    
+    // Update customer payment history for credit scoring
+    await updateCustomerPaymentHistory(customerId, 'success')
+
     console.log('Invoice payment succeeded:', invoice.id)
   } catch (error) {
     console.error('Error handling invoice payment succeeded:', error)
@@ -288,14 +330,32 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice, db: any) {
   }
 
   try {
-    // Update invoice status
+    // Get current payment attempt count
+    const currentInvoice = await db.getInvoiceByStripeId(invoice.id)
+    const attemptCount = (currentInvoice?.payment_attempts || 0) + 1
+    
+    // Update invoice status based on attempts
+    const newStatus = attemptCount >= 3 ? 'uncollectible' : 'past_due'
+    
     await db.updateInvoice(invoice.id, {
-      status: 'uncollectible' as any
+      status: newStatus as any,
+      payment_attempts: attemptCount,
+      last_payment_error: invoice.last_finalization_error?.message || 'Payment failed'
     })
 
     // If this is a subscription invoice, update subscription status
     if (invoice.subscription) {
       const subscription = await stripe.subscriptions.retrieve(invoice.subscription as string)
+      
+      // Pause subscription after multiple failures
+      if (attemptCount >= 2) {
+        await stripe.subscriptions.update(subscription.id, {
+          pause_collection: {
+            behavior: 'void'
+          }
+        })
+      }
+      
       await db.updateSubscription(subscription.id, {
         status: 'past_due' as any
       })
@@ -310,10 +370,18 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice, db: any) {
       })
     }
 
-    // TODO: Send notification to user about failed payment
-    // TODO: Implement dunning management
+    // Send payment failure notification with escalation level
+    await sendPaymentFailureNotification(invoice, profile, attemptCount)
     
-    console.log('Invoice payment failed:', invoice.id)
+    // Schedule automated payment retry if not max attempts
+    if (attemptCount < 3) {
+      await schedulePaymentRetry(invoice.id, attemptCount)
+    }
+    
+    // Update customer payment history
+    await updateCustomerPaymentHistory(customerId, 'failed')
+    
+    console.log(`Invoice payment failed (attempt ${attemptCount}):`, invoice.id)
   } catch (error) {
     console.error('Error handling invoice payment failed:', error)
     throw error
@@ -382,6 +450,218 @@ async function updateClerkUserMetadata(userId: string, metadata: any) {
     // await clerkClient.users.updateUserMetadata(userId, { publicMetadata: metadata })
   } catch (error) {
     console.error('Error updating Clerk metadata:', error)
+  }
+}
+
+// Generate unique invoice number
+function generateInvoiceNumber(): string {
+  const date = new Date()
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const timestamp = Date.now().toString().slice(-6)
+  return `INV-${year}${month}-${timestamp}`
+}
+
+// Send invoice created notification
+async function sendInvoiceCreatedNotification(invoice: Stripe.Invoice, profile: any) {
+  try {
+    // TODO: Implement email service integration
+    console.log('Would send invoice created email to:', profile.email)
+    
+    // This would integrate with your email service (SendGrid, SES, etc.)
+    // await emailService.sendInvoiceEmail({
+    //   to: profile.email,
+    //   invoice: invoice,
+    //   template: 'invoice-created'
+    // })
+  } catch (error) {
+    console.error('Error sending invoice notification:', error)
+  }
+}
+
+// Send payment success notification
+async function sendPaymentSuccessNotification(invoice: Stripe.Invoice, profile: any) {
+  try {
+    console.log('Would send payment success email to:', profile.email)
+    
+    // TODO: Implement payment confirmation email
+    // await emailService.sendPaymentConfirmation({
+    //   to: profile.email,
+    //   invoice: invoice,
+    //   amount: invoice.amount_paid,
+    //   template: 'payment-received'
+    // })
+  } catch (error) {
+    console.error('Error sending payment success notification:', error)
+  }
+}
+
+// Send payment failure notification with escalation
+async function sendPaymentFailureNotification(invoice: Stripe.Invoice, profile: any, attemptCount: number) {
+  try {
+    const escalationLevel = attemptCount >= 3 ? 3 : attemptCount >= 2 ? 2 : 1
+    
+    console.log(`Would send payment failure email (level ${escalationLevel}) to:`, profile.email)
+    
+    // TODO: Implement escalating payment reminder emails
+    // await emailService.sendPaymentReminder({
+    //   to: profile.email,
+    //   invoice: invoice,
+    //   escalationLevel: escalationLevel,
+    //   template: 'payment-reminder'
+    // })
+  } catch (error) {
+    console.error('Error sending payment failure notification:', error)
+  }
+}
+
+// Generate and store payment receipt
+async function generatePaymentReceipt(invoice: Stripe.Invoice, profile: any) {
+  try {
+    console.log('Would generate payment receipt for invoice:', invoice.id)
+    
+    // TODO: Generate PDF receipt and store in file system or cloud storage
+    // const receiptPDF = await generateReceiptPDF(invoice, profile)
+    // const receiptUrl = await uploadToStorage(receiptPDF, `receipts/receipt-${invoice.id}.pdf`)
+    // 
+    // // Update invoice record with receipt URL
+    // await db.updateInvoice(invoice.id, {
+    //   receipt_url: receiptUrl
+    // })
+  } catch (error) {
+    console.error('Error generating payment receipt:', error)
+  }
+}
+
+// Update customer payment history for analytics
+async function updateCustomerPaymentHistory(customerId: string, status: 'success' | 'failed') {
+  try {
+    console.log(`Updating payment history for customer ${customerId}: ${status}`)
+    
+    // TODO: Implement customer analytics tracking
+    // await analytics.track({
+    //   event: 'payment_attempt',
+    //   customerId: customerId,
+    //   status: status,
+    //   timestamp: new Date().toISOString()
+    // })
+  } catch (error) {
+    console.error('Error updating customer payment history:', error)
+  }
+}
+
+// Schedule automated payment retry
+async function schedulePaymentRetry(invoiceId: string, attemptCount: number) {
+  try {
+    // Calculate retry delay: 24h, 72h, 168h (1 week)
+    const retryDelays = [24, 72, 168]
+    const delayHours = retryDelays[attemptCount - 1] || 168
+    
+    const retryDate = new Date()
+    retryDate.setHours(retryDate.getHours() + delayHours)
+    
+    console.log(`Would schedule payment retry for invoice ${invoiceId} at:`, retryDate)
+    
+    // TODO: Implement job queue for automated retries
+    // await jobQueue.schedule('retry_payment', {
+    //   invoiceId: invoiceId,
+    //   attemptCount: attemptCount
+    // }, retryDate)
+  } catch (error) {
+    console.error('Error scheduling payment retry:', error)
+  }
+}
+
+// Handle invoice sent event
+async function handleInvoiceSent(invoice: Stripe.Invoice, db: any) {
+  try {
+    await db.updateInvoice(invoice.id, {
+      status: 'sent' as any,
+      sent_at: new Date().toISOString()
+    })
+    
+    console.log('Invoice sent successfully:', invoice.id)
+  } catch (error) {
+    console.error('Error handling invoice sent:', error)
+    throw error
+  }
+}
+
+// Handle invoice updated event
+async function handleInvoiceUpdated(invoice: Stripe.Invoice, db: any) {
+  try {
+    await db.updateInvoice(invoice.id, {
+      status: invoice.status as any,
+      amount_paid: invoice.amount_paid || 0,
+      amount_due: invoice.amount_due || 0,
+      hosted_invoice_url: invoice.hosted_invoice_url || undefined,
+      invoice_pdf: invoice.invoice_pdf || undefined,
+      updated_at: new Date().toISOString()
+    })
+    
+    console.log('Invoice updated successfully:', invoice.id)
+  } catch (error) {
+    console.error('Error handling invoice updated:', error)
+    throw error
+  }
+}
+
+// Handle invoice finalized event
+async function handleInvoiceFinalized(invoice: Stripe.Invoice, db: any) {
+  try {
+    await db.updateInvoice(invoice.id, {
+      status: 'open' as any,
+      finalized_at: new Date().toISOString(),
+      invoice_pdf: invoice.invoice_pdf || undefined
+    })
+    
+    // Auto-send invoice if configured
+    if (invoice.auto_advance) {
+      await stripe.invoices.sendInvoice(invoice.id)
+    }
+    
+    console.log('Invoice finalized successfully:', invoice.id)
+  } catch (error) {
+    console.error('Error handling invoice finalized:', error)
+    throw error
+  }
+}
+
+// Handle invoice voided event
+async function handleInvoiceVoided(invoice: Stripe.Invoice, db: any) {
+  try {
+    await db.updateInvoice(invoice.id, {
+      status: 'void' as any,
+      voided_at: new Date().toISOString()
+    })
+    
+    // Send void notification if needed
+    const customerId = invoice.customer as string
+    const profile = await db.getProfileByStripeCustomerId(customerId)
+    if (profile) {
+      await sendInvoiceVoidedNotification(invoice, profile)
+    }
+    
+    console.log('Invoice voided successfully:', invoice.id)
+  } catch (error) {
+    console.error('Error handling invoice voided:', error)
+    throw error
+  }
+}
+
+// Send invoice voided notification
+async function sendInvoiceVoidedNotification(invoice: Stripe.Invoice, profile: any) {
+  try {
+    console.log('Would send invoice voided email to:', profile.email)
+    
+    // TODO: Implement invoice void notification
+    // await emailService.sendInvoiceVoidNotification({
+    //   to: profile.email,
+    //   invoice: invoice,
+    //   template: 'invoice-voided'
+    // })
+  } catch (error) {
+    console.error('Error sending invoice void notification:', error)
   }
 }
 

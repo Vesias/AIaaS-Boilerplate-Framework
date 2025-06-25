@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Search, Calendar, CheckCircle, Circle, Clock, Filter, BarChart3, Kanban, List, Grid, Brain, TrendingUp, Archive, User, AlertTriangle } from 'lucide-react'
+import { Plus, Search, Calendar, CheckCircle, Circle, Clock, Filter, BarChart3, Kanban, List, Grid, Brain, TrendingUp, Archive, User, AlertTriangle, Loader2 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -290,23 +290,131 @@ export default function TasksPage() {
     }
   }
 
+  const KanbanBoard = () => {
+    const columns = [
+      { id: 'todo', title: 'To Do', tasks: filteredTasks.filter(t => t.status === 'todo') },
+      { id: 'in_progress', title: 'In Progress', tasks: filteredTasks.filter(t => t.status === 'in_progress') },
+      { id: 'review', title: 'Review', tasks: filteredTasks.filter(t => t.status === 'review') },
+      { id: 'done', title: 'Done', tasks: filteredTasks.filter(t => t.status === 'done') }
+    ]
+
+    return (
+      <div className="grid grid-cols-4 gap-4 h-96">
+        {columns.map((column) => (
+          <Card key={column.id} className="flex flex-col">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium">
+                {column.title} ({column.tasks.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1">
+              <ScrollArea className="h-full">
+                <div className="space-y-2">
+                  {column.tasks.map((task) => (
+                    <div
+                      key={task.id}
+                      className="p-3 bg-muted/50 rounded-lg border cursor-pointer hover:bg-muted/70"
+                      onClick={() => updateTaskStatus(task.id, column.id as Task['status'])}
+                    >
+                      <h4 className="font-medium text-sm">{task.title}</h4>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                          {task.priority}
+                        </Badge>
+                        {task.dueDate && (
+                          <Badge variant="outline" className="text-xs">
+                            {new Date(task.dueDate).toLocaleDateString()}
+                          </Badge>
+                        )}
+                      </div>
+                      {task.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {task.tags.map((tag) => (
+                            <Badge key={tag} variant="secondary" className="text-xs">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
+
+  const CalendarView = () => {
+    const tasksWithDates = filteredTasks.filter(t => t.dueDate)
+    const today = new Date()
+    const weekTasks = tasksWithDates.filter(t => {
+      const taskDate = new Date(t.dueDate!)
+      const diffTime = Math.abs(taskDate.getTime() - today.getTime())
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      return diffDays <= 7
+    })
+
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Upcoming Tasks (Next 7 Days)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {weekTasks.length === 0 ? (
+              <p className="text-muted-foreground text-center py-8">
+                No tasks with due dates in the next week
+              </p>
+            ) : (
+              weekTasks.map((task) => (
+                <div key={task.id} className="flex items-center gap-4 p-3 border rounded-lg">
+                  <div className="flex-1">
+                    <h4 className="font-medium">{task.title}</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Due: {new Date(task.dueDate!).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                    {task.priority}
+                  </Badge>
+                  <Badge variant={task.completed ? 'default' : 'secondary'}>
+                    {task.status}
+                  </Badge>
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <div className="flex-1 space-y-4 p-8 pt-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Tasks</h2>
           <p className="text-muted-foreground">
-            Manage your tasks and stay productive
+            Manage your tasks and stay productive with AI-powered insights
           </p>
         </div>
-        <Button onClick={() => setShowTaskForm(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Task
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => generateAISuggestions()} disabled={loadingAI}>
+            {loadingAI ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Brain className="mr-2 h-4 w-4" />}
+            AI Suggestions
+          </Button>
+          <Button onClick={() => setShowTaskForm(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Task
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Tasks</CardTitle>
@@ -325,18 +433,28 @@ export default function TasksPage() {
           <CardContent>
             <div className="text-2xl font-bold">{taskStats.completed}</div>
             <p className="text-xs text-muted-foreground">
-              {taskStats.total > 0 ? Math.round((taskStats.completed / taskStats.total) * 100) : 0}% completion rate
+              {taskStats.completionRate}% completion rate
             </p>
           </CardContent>
         </Card>
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            <CardTitle className="text-sm font-medium">In Progress</CardTitle>
             <Clock className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{taskStats.pending}</div>
+            <div className="text-2xl font-bold">{taskStats.inProgress}</div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Review</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-yellow-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{taskStats.review}</div>
           </CardContent>
         </Card>
         
@@ -349,106 +467,305 @@ export default function TasksPage() {
             <div className="text-2xl font-bold">{taskStats.overdue}</div>
           </CardContent>
         </Card>
-      </div>
-
-      {/* Filters and Search */}
-      <div className="flex items-center gap-4">
-        <div className="flex-1">
-          <Input
-            placeholder="Search tasks..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="max-w-sm"
-          />
-        </div>
-        <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger className="w-[180px]">
-            <Filter className="mr-2 h-4 w-4" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Tasks</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Tasks List */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Tasks</CardTitle>
-          <CardDescription>
-            Your current tasks and their status
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="text-center py-8">Loading tasks...</div>
-          ) : filteredTasks.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No tasks found. Create your first task to get started!
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Time Efficiency</CardTitle>
+            <TrendingUp className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {taskStats.totalEstimatedHours > 0 ? 
+                Math.round((taskStats.totalActualHours / taskStats.totalEstimatedHours) * 100) : 0}%
             </div>
-          ) : (
+            <p className="text-xs text-muted-foreground">
+              {taskStats.totalActualHours}h / {taskStats.totalEstimatedHours}h
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* AI Suggestions */}
+      {aiSuggestions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5" />
+              AI Task Suggestions
+            </CardTitle>
+            <CardDescription>
+              AI-powered task recommendations based on your current projects
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
             <div className="space-y-4">
-              {filteredTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className={`flex items-center gap-4 p-4 border rounded-lg ${
-                    task.completed ? 'bg-muted/50' : ''
-                  }`}
-                >
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => toggleTask(task.id)}
-                    className="p-0 h-auto"
-                  >
-                    {task.completed ? (
-                      <CheckCircle className="h-5 w-5 text-green-500" />
-                    ) : (
-                      <Circle className="h-5 w-5" />
-                    )}
-                  </Button>
-                  
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className={`font-medium ${task.completed ? 'line-through text-muted-foreground' : ''}`}>
-                        {task.title}
-                      </h3>
-                      <Badge variant="outline" className={getPriorityColor(task.priority)}>
-                        {task.priority}
-                      </Badge>
-                    </div>
-                    {task.content && (
-                      <p className={`text-sm ${task.completed ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
-                        {task.content}
+              {aiSuggestions.map((suggestion) => (
+                <div key={suggestion.id} className="p-4 border rounded-lg">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h4 className="font-medium">{suggestion.title}</h4>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {suggestion.description}
                       </p>
-                    )}
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <span>Created: {new Date(task.createdAt).toLocaleDateString()}</span>
-                      {task.dueDate && (
-                        <span className={new Date(task.dueDate) < new Date() && !task.completed ? 'text-red-500' : ''}>
-                          Due: {new Date(task.dueDate).toLocaleDateString()}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2 mt-2">
+                        <Badge variant="outline" className={getPriorityColor(suggestion.priority)}>
+                          {suggestion.priority}
+                        </Badge>
+                        <Badge variant="secondary">
+                          {suggestion.estimatedHours}h
+                        </Badge>
+                        {suggestion.tags.map((tag) => (
+                          <Badge key={tag} variant="outline" className="text-xs">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2 italic">
+                        💡 {suggestion.reasoning}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={() => createTaskFromAI(suggestion)}>
+                        <Plus className="h-3 w-3 mr-1" />
+                        Create
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => setAiSuggestions(prev => prev.filter(s => s.id !== suggestion.id))}
+                      >
+                        <Archive className="h-3 w-3" />
+                      </Button>
                     </div>
                   </div>
-                  
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => deleteTask(task.id)}
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    Delete
-                  </Button>
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* View Mode Selector */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <Input
+              placeholder="Search tasks..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-sm"
+            />
+          </div>
+          <Select value={filter} onValueChange={setFilter}>
+            <SelectTrigger className="w-[180px]">
+              <Filter className="mr-2 h-4 w-4" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Tasks</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="overdue">Overdue</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={dateRange} onValueChange={setDateRange}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Time</SelectItem>
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="week">This Week</SelectItem>
+              <SelectItem value="month">This Month</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={viewMode === 'list' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('list')}
+          >
+            <List className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={viewMode === 'kanban' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('kanban')}
+          >
+            <Kanban className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={viewMode === 'calendar' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('calendar')}
+          >
+            <Calendar className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Tag Filter */}
+      {allTags.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-muted-foreground">Tags:</span>
+          {allTags.map((tag) => (
+            <Button
+              key={tag}
+              variant={selectedTags.includes(tag) ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setSelectedTags(prev => 
+                  prev.includes(tag) 
+                    ? prev.filter(t => t !== tag)
+                    : [...prev, tag]
+                )
+              }}
+            >
+              {tag}
+            </Button>
+          ))}
+          {selectedTags.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedTags([])}
+            >
+              Clear
+            </Button>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      )}
+
+      {/* Tasks Content */}
+      {loading ? (
+        <Card>
+          <CardContent className="text-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+            Loading tasks...
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {viewMode === 'list' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Tasks</CardTitle>
+                <CardDescription>
+                  Your current tasks and their status
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {filteredTasks.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No tasks found. Create your first task to get started!
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {filteredTasks.map((task) => (
+                      <div
+                        key={task.id}
+                        className={`flex items-center gap-4 p-4 border rounded-lg ${
+                          task.completed ? 'bg-muted/50' : ''
+                        }`}
+                      >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleTask(task.id)}
+                          className="p-0 h-auto"
+                        >
+                          {task.completed ? (
+                            <CheckCircle className="h-5 w-5 text-green-500" />
+                          ) : (
+                            <Circle className="h-5 w-5" />
+                          )}
+                        </Button>
+                        
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className={`font-medium ${task.completed ? 'line-through text-muted-foreground' : ''}`}>
+                              {task.title}
+                            </h3>
+                            <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                              {task.priority}
+                            </Badge>
+                            <Badge variant={task.status === 'done' ? 'default' : 'secondary'}>
+                              {task.status.replace('_', ' ')}
+                            </Badge>
+                          </div>
+                          {task.content && (
+                            <p className={`text-sm ${task.completed ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
+                              {task.content}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                            <span>Created: {new Date(task.createdAt).toLocaleDateString()}</span>
+                            {task.dueDate && (
+                              <span className={new Date(task.dueDate) < new Date() && !task.completed ? 'text-red-500' : ''}>
+                                Due: {new Date(task.dueDate).toLocaleDateString()}
+                              </span>
+                            )}
+                            {task.assignee && (
+                              <span className="flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                {task.assignee}
+                              </span>
+                            )}
+                            {task.estimatedHours && (
+                              <span>
+                                Est: {task.estimatedHours}h
+                                {task.actualHours && ` / Actual: ${task.actualHours}h`}
+                              </span>
+                            )}
+                          </div>
+                          {task.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {task.tags.map((tag) => (
+                                <Badge key={tag} variant="secondary" className="text-xs">
+                                  {tag}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={task.status}
+                            onValueChange={(value) => updateTaskStatus(task.id, value as Task['status'])}
+                          >
+                            <SelectTrigger className="w-[120px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="todo">To Do</SelectItem>
+                              <SelectItem value="in_progress">In Progress</SelectItem>
+                              <SelectItem value="review">Review</SelectItem>
+                              <SelectItem value="done">Done</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteTask(task.id)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {viewMode === 'kanban' && <KanbanBoard />}
+          {viewMode === 'calendar' && <CalendarView />}
+        </>
+      )}
 
       {/* Create Task Dialog */}
       <Dialog open={showTaskForm} onOpenChange={setShowTaskForm}>
@@ -500,6 +817,38 @@ export default function TasksPage() {
                   type="date"
                 />
               </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="assignee">Assignee</Label>
+                <Input
+                  id="assignee"
+                  name="assignee"
+                  placeholder="Enter assignee name (optional)"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="estimatedHours">Estimated Hours</Label>
+                <Input
+                  id="estimatedHours"
+                  name="estimatedHours"
+                  type="number"
+                  placeholder="Enter estimated hours"
+                  min="0.5"
+                  step="0.5"
+                />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="tags">Tags</Label>
+              <Input
+                id="tags"
+                name="tags"
+                placeholder="Enter tags separated by commas (e.g., frontend, urgent)"
+              />
             </div>
             
             <div className="flex justify-end gap-2">

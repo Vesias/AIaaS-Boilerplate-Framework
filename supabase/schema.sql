@@ -1,4 +1,4 @@
--- Supabase Database Schema for MicroSaaS Boilerplate
+-- Supabase Database Schema for AIaaS Boilerplate
 -- This schema is designed to work with Clerk authentication via JWT
 
 -- Enable required extensions
@@ -357,4 +357,4 @@ CREATE TRIGGER update_api_keys_updated_at BEFORE UPDATE ON api_keys
 
 -- Insert sample data (optional)
 -- INSERT INTO blog_posts (title, slug, content, excerpt, published, meta_title, meta_description) VALUES 
--- ('Welcome to Our MicroSaaS', 'welcome-to-our-microsaas', 'This is the content of our first blog post...', 'Welcome to our amazing MicroSaaS platform', true, 'Welcome to Our MicroSaaS', 'Get started with our powerful MicroSaaS platform today');
+-- ('Welcome to Our AIaaS', 'welcome-to-our-aiaas', 'This is the content of our first blog post...', 'Welcome to our amazing AIaaS platform', true, 'Welcome to Our AIaaS', 'Get started with our powerful AIaaS platform today');

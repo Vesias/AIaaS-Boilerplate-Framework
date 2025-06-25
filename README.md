@@ -1,6 +1,6 @@
-# 🚀 MicroSaaS Boilerplate 2025
+# 🚀 AIaaS Boilerplate 2025
 
-A complete, production-ready Next.js 15 MicroSaaS boilerplate with modern integrations, AI capabilities, and automation features.
+A complete, production-ready Next.js 15 AIaaS boilerplate with modern integrations, AI capabilities, and automation features.
 
 ## ✨ Features
 
@@ -71,8 +71,8 @@ graph TB
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/microsaas-boilerplate.git
-cd microsaas-boilerplate
+git clone https://github.com/Vesias/AIaaS-Boilerplate-Framework.git
+cd AIaaS-Boilerplate-Framework
 ```
 
 ### 2. Install Dependencies
@@ -311,7 +311,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - 📧 Email: support@yourcompany.com
 - 💬 Discord: [Join our community](https://discord.gg/your-server)
 - 📖 Documentation: [docs.yourcompany.com](https://docs.yourcompany.com)
-- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/microsaas-boilerplate/issues)
+- 🐛 Issues: [GitHub Issues](https://github.com/Vesias/AIaaS-Boilerplate-Framework/issues)
 
 ---
 

@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: roomicor-service
+  namespace: roomicor
+  labels:
+    app.kubernetes.io/name: roomicor
+    app.kubernetes.io/component: service
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/api/metrics"
+    prometheus.io/port: "3000"
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: roomicor
+    app.kubernetes.io/component: app
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: roomicor-service
+  namespace: roomicor-staging
+  labels:
+    app.kubernetes.io/name: roomicor
+    app.kubernetes.io/component: service
+    environment: staging
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/api/metrics"
+    prometheus.io/port: "3000"
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: roomicor
+    app.kubernetes.io/component: app
+
+---
+# Redis Service for Production
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: roomicor
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache
+spec:
+  type: ClusterIP
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache
+
+---
+# Redis Service for Staging
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: roomicor-staging
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache
+    environment: staging
+spec:
+  type: ClusterIP
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache

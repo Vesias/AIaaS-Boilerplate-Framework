@@ -1,4 +1,4 @@
-# System Patterns - Next.js 15 MicroSaaS Boilerplate
+# System Patterns - Next.js 15 AIaaS Boilerplate
 
 ## Architektur-Patterns
 

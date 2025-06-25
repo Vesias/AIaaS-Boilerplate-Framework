@@ -23,7 +23,7 @@ services:
     depends_on:
       - redis
     networks:
-      - microsaas-dev
+      - aiass-dev
     restart: unless-stopped
 
   # Redis for development
@@ -32,7 +32,7 @@ services:
     ports:
       - "6379:6379"
     networks:
-      - microsaas-dev
+      - aiass-dev
     restart: unless-stopped
 
   # n8n for development
@@ -50,12 +50,12 @@ services:
     volumes:
       - n8n_dev_data:/home/node/.n8n
     networks:
-      - microsaas-dev
+      - aiass-dev
     restart: unless-stopped
 
 volumes:
   n8n_dev_data:
 
 networks:
-  microsaas-dev:
+  aiass-dev:
     driver: bridge

@@ -1,4 +1,4 @@
-# Progress Tracking - Next.js 15 MicroSaaS Boilerplate
+# Progress Tracking - Next.js 15 AIaaS Boilerplate
 
 ## Phase 1: Foundation Setup ⏳
 **Status:** Planning

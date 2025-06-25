@@ -74,6 +74,9 @@ export default clerkMiddleware(async (auth, req) => {
   }
 })
 
+// This file has been moved to /src/middleware.ts for Next.js 15 compatibility.
+// Please use /src/middleware.ts as the entry point for middleware logic.
+
 export const config = {
   matcher: [
     // Skip Next.js internals and all static files, unless found in search params

@@ -1,4 +1,4 @@
-# Multi-stage Docker build for Next.js MicroSaaS
+# Multi-stage Docker build for Next.js AIaaS
 # Optimized for production deployment with minimal image size
 
 # Stage 1: Dependencies

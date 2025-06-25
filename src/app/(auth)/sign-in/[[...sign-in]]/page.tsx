@@ -8,7 +8,7 @@ export default function SignInPage() {
           Willkommen zurück
         </h1>
         <p className="text-slate-600 dark:text-slate-400 mt-2">
-          Melden Sie sich in Ihrem MicroSaaS-Konto an
+          Melden Sie sich in Ihrem AIaaS-Konto an
         </p>
       </div>
       

@@ -1,12 +1,12 @@
-# Product Context - Next.js 15 MicroSaaS Boilerplate
+# Product Context - Next.js 15 AIaaS Boilerplate
 
 ## Projekt-Übersicht
-**Projektname:** Next.js 15 MicroSaaS Boilerplate  
-**Typ:** Boilerplate/Starter-Template für MicroSaaS-Anwendungen  
-**Ziel:** Vollständiges, produktionsreifes Setup für schnelle SaaS-Entwicklung
+**Projektname:** Next.js 15 AIaaS Boilerplate  
+**Typ:** Boilerplate/Starter-Template für AIaaS-Anwendungen  
+**Ziel:** Vollständiges, produktionsreifes Setup für schnelle AIaaS-Entwicklung
 
 ## Hauptziele
-- Schneller Start für MicroSaaS-Projekte
+- Schneller Start für AIaaS-Projekte
 - Moderne Tech-Stack mit Next.js 15
 - Best Practices für Performance und Sicherheit
 - Skalierbare Architektur
@@ -28,7 +28,7 @@
 - Entwicklungsserver mit Hot Reload
 
 ## Zielgruppe
-- Entwickler, die schnell MicroSaaS-Projekte starten möchten
+- Entwickler, die schnell AIaaS-Projekte starten möchten
 - Teams, die ein standardisiertes Setup benötigen
 - Indie Hacker und Startups
 

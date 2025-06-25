@@ -25,6 +25,10 @@ export async function POST(req: Request) {
     }
 
     // Create customer portal session
+    if (!stripe) {
+      return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
+    }
+    
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: profile.stripe_customer_id,
       return_url: returnUrl || `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,

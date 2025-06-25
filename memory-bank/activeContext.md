@@ -1,7 +1,7 @@
-# Active Context - Next.js 15 MicroSaaS Boilerplate
+# Active Context - Next.js 15 AIaaS Boilerplate
 
 ## Current Focus
-**Primary Task:** Erstelle das Basis-Setup für ein Next.js 15 MicroSaaS-Boilerplate mit TypeScript und Tailwind CSS
+**Primary Task:** Erstelle das Basis-Setup für ein Next.js 15 AIaaS-Boilerplate mit TypeScript und Tailwind CSS
 
 **Status:** Planning Phase - Memory Bank Setup abgeschlossen, Architekturplanung in Vorbereitung
 

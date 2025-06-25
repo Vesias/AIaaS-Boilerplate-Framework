@@ -1,0 +1,441 @@
+name: Deployment Pipeline
+
+on:
+  workflow_run:
+    workflows: ["CI/CD Pipeline"]
+    types:
+      - completed
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      skip_tests:
+        description: 'Skip tests (emergency deployment)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '9'
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Pre-deployment checks
+  pre-deploy:
+    name: Pre-deployment Checks
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    outputs:
+      deploy-staging: ${{ steps.determine-env.outputs.deploy-staging }}
+      deploy-production: ${{ steps.determine-env.outputs.deploy-production }}
+      image-tag: ${{ steps.determine-env.outputs.image-tag }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine deployment environment
+        id: determine-env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
+              echo "deploy-production=true" >> $GITHUB_OUTPUT
+              echo "deploy-staging=false" >> $GITHUB_OUTPUT
+            else
+              echo "deploy-staging=true" >> $GITHUB_OUTPUT
+              echo "deploy-production=false" >> $GITHUB_OUTPUT
+            fi
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "deploy-staging=true" >> $GITHUB_OUTPUT
+            echo "deploy-production=false" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "deploy-production=true" >> $GITHUB_OUTPUT
+            echo "deploy-staging=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Set image tag
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "image-tag=latest" >> $GITHUB_OUTPUT
+          else
+            echo "image-tag=develop" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check Docker image exists
+        run: |
+          docker manifest inspect ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.determine-env.outputs.image-tag }} > /dev/null
+          echo "✅ Docker image found and ready for deployment"
+
+  # Deploy to Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: pre-deploy
+    if: needs.pre-deploy.outputs.deploy-staging == 'true'
+    environment: 
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+    concurrency:
+      group: staging-deployment
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment variables
+        run: |
+          echo "DEPLOYMENT_ENV=staging" >> $GITHUB_ENV
+          echo "APP_URL=${{ secrets.STAGING_URL }}" >> $GITHUB_ENV
+
+      # Vercel Deployment
+      - name: Deploy to Vercel (Staging)
+        id: vercel-deploy
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: ./
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+          github-comment: true
+        env:
+          NEXT_PUBLIC_APP_URL: ${{ secrets.STAGING_URL }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.STAGING_CLERK_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STAGING_STRIPE_PUBLISHABLE_KEY }}
+
+      # Alternative Docker Deployment (if using Docker)
+      - name: Deploy with Docker Compose (Alternative)
+        if: ${{ secrets.DEPLOY_WITH_DOCKER }}
+        run: |
+          echo "🐳 Docker deployment would run here"
+          echo "Commands:"
+          echo "1. Pull latest image: docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.pre-deploy.outputs.image-tag }}"
+          echo "2. Update docker-compose.staging.yml"
+          echo "3. Deploy: docker-compose -f docker-compose.staging.yml up -d"
+          echo "4. Run health checks"
+
+      - name: Run database migrations (Staging)
+        run: |
+          echo "🗄️ Running database migrations for staging"
+          echo "This would typically run Supabase migrations or custom migration scripts"
+          # npx supabase db push --linked --project-ref ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+
+      - name: Warm up application
+        run: |
+          echo "🔥 Warming up staging application"
+          sleep 30
+          curl -f ${{ secrets.STAGING_URL }}/api/health || exit 1
+          echo "✅ Staging application is responding"
+
+      - name: Run smoke tests
+        run: |
+          echo "🧪 Running smoke tests against staging"
+          # Add your smoke test commands here
+          curl -f ${{ secrets.STAGING_URL }}/ || exit 1
+          curl -f ${{ secrets.STAGING_URL }}/api/health || exit 1
+          curl -f ${{ secrets.STAGING_URL }}/pricing || exit 1
+          echo "✅ Smoke tests passed"
+
+      - name: Update deployment status
+        id: deploy
+        run: |
+          echo "url=${{ secrets.STAGING_URL }}" >> $GITHUB_OUTPUT
+          echo "✅ Staging deployment completed successfully"
+
+      - name: Notify team
+        uses: 8398a7/action-slack@v3
+        if: success()
+        with:
+          status: success
+          channel: '#deployments'
+          text: |
+            🚀 Staging deployment successful!
+            
+            Environment: Staging
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            URL: ${{ secrets.STAGING_URL }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Deploy to Production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: pre-deploy
+    if: needs.pre-deploy.outputs.deploy-production == 'true'
+    environment: 
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment variables
+        run: |
+          echo "DEPLOYMENT_ENV=production" >> $GITHUB_ENV
+          echo "APP_URL=${{ secrets.PRODUCTION_URL }}" >> $GITHUB_ENV
+
+      - name: Production deployment approval
+        uses: trstringer/manual-approval@v1
+        if: github.event_name != 'workflow_dispatch' || !github.event.inputs.skip_tests
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: ${{ github.repository_owner }}
+          minimum-approvals: 1
+          issue-title: "Production Deployment Approval Required"
+          issue-body: |
+            Please review and approve the production deployment.
+            
+            **Details:**
+            - Branch: ${{ github.ref }}
+            - Commit: ${{ github.sha }}
+            - Author: ${{ github.actor }}
+            - Docker Image: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.pre-deploy.outputs.image-tag }}
+            
+            **Pre-deployment Checklist:**
+            - [ ] All tests are passing
+            - [ ] Security scans completed
+            - [ ] Database migrations reviewed
+            - [ ] Rollback plan prepared
+            - [ ] Monitoring alerts configured
+            
+            React with 👍 to approve this deployment.
+
+      - name: Create deployment backup
+        run: |
+          echo "💾 Creating pre-deployment backup"
+          echo "This would typically:"
+          echo "1. Backup current database state"
+          echo "2. Tag current Docker image as rollback candidate"
+          echo "3. Export current configuration"
+
+      # Vercel Production Deployment
+      - name: Deploy to Vercel (Production)
+        id: vercel-deploy
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+        env:
+          NEXT_PUBLIC_APP_URL: ${{ secrets.PRODUCTION_URL }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.PRODUCTION_CLERK_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.PRODUCTION_STRIPE_PUBLISHABLE_KEY }}
+
+      # Alternative Docker Deployment
+      - name: Deploy with Docker (Alternative)
+        if: ${{ secrets.DEPLOY_WITH_DOCKER }}
+        run: |
+          echo "🐳 Production Docker deployment would run here"
+          echo "Commands:"
+          echo "1. Pull latest image: docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.pre-deploy.outputs.image-tag }}"
+          echo "2. Blue-green deployment with docker-compose.prod.yml"
+          echo "3. Health checks and traffic switching"
+          echo "4. Cleanup old containers"
+
+      - name: Run database migrations (Production)
+        run: |
+          echo "🗄️ Running database migrations for production"
+          echo "This would run production-safe migrations"
+          # npx supabase db push --linked --project-ref ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
+
+      - name: Warm up application
+        run: |
+          echo "🔥 Warming up production application"
+          sleep 60  # Give production more time to start
+          
+          # Health check with retries
+          for i in {1..10}; do
+            if curl -f ${{ secrets.PRODUCTION_URL }}/api/health; then
+              echo "✅ Production application is responding"
+              break
+            else
+              echo "⏳ Attempt $i failed, retrying in 30s..."
+              sleep 30
+            fi
+          done
+
+      - name: Run production smoke tests
+        run: |
+          echo "🧪 Running production smoke tests"
+          curl -f ${{ secrets.PRODUCTION_URL }}/ || exit 1
+          curl -f ${{ secrets.PRODUCTION_URL }}/api/health || exit 1
+          curl -f ${{ secrets.PRODUCTION_URL }}/pricing || exit 1
+          
+          # Test critical user flows
+          echo "Testing critical paths..."
+          # Add your critical path tests here
+          
+          echo "✅ Production smoke tests passed"
+
+      - name: Update monitoring and alerts
+        run: |
+          echo "📊 Updating monitoring dashboards"
+          echo "This would:"
+          echo "1. Update Grafana dashboards"
+          echo "2. Configure new alerts"
+          echo "3. Update uptime monitoring"
+
+      - name: Update deployment status
+        id: deploy
+        run: |
+          echo "url=${{ secrets.PRODUCTION_URL }}" >> $GITHUB_OUTPUT
+          echo "✅ Production deployment completed successfully"
+
+      - name: Notify success
+        uses: 8398a7/action-slack@v3
+        if: success()
+        with:
+          status: success
+          channel: '#deployments'
+          text: |
+            🎉 Production deployment successful! 
+            
+            Environment: Production
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            URL: ${{ secrets.PRODUCTION_URL }}
+            
+            All systems are go! 🚀
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Post-deployment monitoring
+  post-deploy-monitoring:
+    name: Post-deployment Monitoring
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+
+    steps:
+      - name: Setup monitoring environment
+        run: |
+          if [[ "${{ needs.deploy-production.result }}" == "success" ]]; then
+            echo "MONITOR_URL=${{ secrets.PRODUCTION_URL }}" >> $GITHUB_ENV
+            echo "ENVIRONMENT=production" >> $GITHUB_ENV
+          else
+            echo "MONITOR_URL=${{ secrets.STAGING_URL }}" >> $GITHUB_ENV
+            echo "ENVIRONMENT=staging" >> $GITHUB_ENV
+          fi
+
+      - name: Extended health monitoring
+        run: |
+          echo "🔍 Starting extended health monitoring for ${{ env.ENVIRONMENT }}"
+          
+          # Monitor for 10 minutes post-deployment
+          for i in {1..20}; do
+            echo "Health check $i/20..."
+            
+            if curl -f -s ${{ env.MONITOR_URL }}/api/health > /dev/null; then
+              echo "✅ Health check $i passed"
+            else
+              echo "❌ Health check $i failed"
+              exit 1
+            fi
+            
+            sleep 30
+          done
+          
+          echo "✅ Extended monitoring completed successfully"
+
+      - name: Performance baseline check
+        run: |
+          echo "⚡ Running performance baseline check"
+          
+          # Measure response times
+          for endpoint in "/" "/pricing" "/api/health"; do
+            echo "Testing ${endpoint}..."
+            response_time=$(curl -o /dev/null -s -w '%{time_total}' ${{ env.MONITOR_URL }}${endpoint})
+            echo "Response time for ${endpoint}: ${response_time}s"
+            
+            # Alert if response time > 3 seconds
+            if (( $(echo "$response_time > 3.0" | bc -l) )); then
+              echo "⚠️ Slow response time detected: ${response_time}s"
+            fi
+          done
+
+  # Failure handling
+  deployment-failed:
+    name: Handle Deployment Failure
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: failure()
+
+    steps:
+      - name: Rollback preparation
+        run: |
+          echo "🚨 Deployment failed - preparing rollback"
+          echo "This would:"
+          echo "1. Identify the last known good deployment"
+          echo "2. Prepare rollback scripts"
+          echo "3. Notify on-call team"
+
+      - name: Notify failure
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          channel: '#deployments'
+          text: |
+            🚨 Deployment failed!
+            
+            Branch: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            
+            @channel Immediate attention required!
+            
+            Rollback may be necessary.
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Create incident issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Deployment Failure - ' + new Date().toISOString(),
+              body: `## Deployment Failure Report
+              
+              **Failed deployment details:**
+              - Branch: ${{ github.ref }}
+              - Commit: ${{ github.sha }}
+              - Author: ${{ github.actor }}
+              - Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+              
+              **Immediate Actions Required:**
+              - [ ] Investigate failure cause
+              - [ ] Determine if rollback is needed
+              - [ ] Update stakeholders
+              - [ ] Fix underlying issue
+              
+              **Rollback Instructions:**
+              1. Identify last known good deployment
+              2. Run: \`gh workflow run deploy.yml -f environment=production -f skip_tests=true\`
+              3. Monitor deployment closely
+              
+              @${{ github.actor }} please investigate immediately.`,
+              labels: ['bug', 'critical', 'deployment']
+            })

@@ -38,7 +38,7 @@ services:
       - redis
       - postgres
     networks:
-      - microsaas
+      - aiass
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
@@ -50,7 +50,7 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_DB: microsaas_dev
+      POSTGRES_DB: aiaas_dev
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-development_password}
     ports:
@@ -59,7 +59,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./supabase/schema.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
-      - microsaas
+      - aiass
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -75,7 +75,7 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - microsaas
+      - aiass
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -100,7 +100,7 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
     networks:
-      - microsaas
+      - aiass
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
@@ -120,7 +120,7 @@ services:
     depends_on:
       - app
     networks:
-      - microsaas
+      - aiass
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
@@ -144,7 +144,7 @@ services:
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
     networks:
-      - microsaas
+      - aiass
     restart: unless-stopped
     profiles:
       - monitoring
@@ -163,7 +163,7 @@ services:
     depends_on:
       - prometheus
     networks:
-      - microsaas
+      - aiass
     restart: unless-stopped
     profiles:
       - monitoring
@@ -176,5 +176,5 @@ volumes:
   grafana_data:
 
 networks:
-  microsaas:
+  aiass:
     driver: bridge

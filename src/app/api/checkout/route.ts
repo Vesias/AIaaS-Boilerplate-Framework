@@ -15,6 +15,13 @@ export async function POST(req: NextRequest) {
 
     const { items, priceId, mode = 'payment' } = await req.json()
 
+    if (!stripe) {
+      return NextResponse.json(
+        { error: 'Stripe not configured' },
+        { status: 500 }
+      )
+    }
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: priceId 

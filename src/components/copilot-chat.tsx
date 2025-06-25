@@ -22,7 +22,7 @@ export function CopilotChat({
 
   const copilotConfig = {
     runtimeUrl: '/api/copilotkit',
-    instructions: `You are an AI assistant for a MicroSaaS automation platform. Help users with:
+    instructions: `You are an AI assistant for an AIaaS automation platform. Help users with:
     
     **Your Capabilities:**
     - Get user subscription and billing information
@@ -139,7 +139,7 @@ export function CopilotFAB({ className }: { className?: string }) {
     <div className={cn('fixed bottom-4 right-4 z-50', className)}>
       <CopilotKit runtimeUrl="/api/copilotkit">
         <CopilotPopup
-          instructions={`You are an AI assistant for a MicroSaaS automation platform. Help users with their workflows, subscriptions, tasks, and integrations. Be friendly, helpful, and provide actionable guidance.`}
+          instructions={`You are an AI assistant for an AIaaS automation platform. Help users with their workflows, subscriptions, tasks, and integrations. Be friendly, helpful, and provide actionable guidance.`}
           labels={{
             title: 'AI Assistant',
             initial: 'Hi! How can I help you with your automation platform today?',

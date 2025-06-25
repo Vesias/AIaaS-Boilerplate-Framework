@@ -4,13 +4,18 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
   release:
     types: [ published ]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1' # Weekly dependency updates
 
 env:
   NODE_VERSION: '20'
   PNPM_VERSION: '9'
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   # Code Quality and Testing
@@ -159,7 +164,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKER_USERNAME }}/microsaas-boilerplate
+          images: ${{ secrets.DOCKER_USERNAME }}/aiaas-boilerplate
           tags: |
             type=ref,event=branch
             type=ref,event=pr

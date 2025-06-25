@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { CheckoutButton } from './checkout-button'
+import CheckoutButton from './checkout-button'
 import { Button } from './ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card'
 import { Badge } from './ui/badge'
@@ -213,7 +213,6 @@ export function PricingSection({
                     priceId={plan.stripePriceId}
                     mode="subscription"
                     className="w-full"
-                    variant={plan.popular ? 'default' : 'outline'}
                   >
                     {plan.buttonText}
                   </CheckoutButton>
